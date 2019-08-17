@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2"
-tar = { path = "/home/matthieu/temp/rust/tar-rs" }
+tar = "0.4.23"
 visual-odometry-rs = { path = "/home/matthieu/git/phd/visual-odometry-rs" }
 png = "0.14"
 byteorder = "1.2" # Reading numbers in [big/little]-endian.
