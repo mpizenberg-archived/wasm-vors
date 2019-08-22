@@ -38,6 +38,7 @@ pub struct WasmTracker {
 #[wasm_bindgen]
 impl WasmTracker {
     pub fn new() -> WasmTracker {
+        console_log!("Initialize WasmTracker");
         WasmTracker {
             tar_buffer: Vec::new(),
             entries: HashMap::new(),
