@@ -15,6 +15,7 @@ png = "0.14"
 byteorder = "1.2" # Reading numbers in [big/little]-endian.
 nalgebra = "0.17" # Linear algebra.
 image = "0.21" # Encoding/decoding images in Rust.
+png-decoder = { path = "/home/matthieu/git/perso/png-decoder" }
 
 [dependencies.web-sys]
 version = "0.3.4"

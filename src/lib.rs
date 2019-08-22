@@ -16,6 +16,8 @@ use vors::core::track::inverse_compositional as track;
 use vors::dataset::tum_rgbd;
 use vors::misc::interop;
 
+use png_decoder::png as png_me;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -88,7 +90,8 @@ impl WasmTracker {
 
         // Initialize tracker with first depth and color image.
         let (depth_map, img) =
-            read_image_pair(&self.associations[0], &self.tar_buffer, &self.entries).expect("81");
+            _read_image_pair_bis(&self.associations[0], &self.tar_buffer, &self.entries)
+                .expect("81");
         let depth_time = self.associations[0].depth_timestamp;
         let img_time = self.associations[0].color_timestamp;
         self.tracker = Some(config.init(depth_time, &depth_map, img_time, img));
@@ -99,7 +102,8 @@ impl WasmTracker {
 
     pub fn track(&mut self, frame_id: usize) -> String {
         let assoc = &self.associations[frame_id];
-        let (depth_map, img) = read_image_pair(assoc, &self.tar_buffer, &self.entries).expect("92");
+        let (depth_map, img) =
+            _read_image_pair_bis(assoc, &self.tar_buffer, &self.entries).expect("92");
 
         // Track the rgb-d image.
         if let Some(ref mut t) = self.tracker {
@@ -151,7 +155,7 @@ fn get_buffer<'a>(name: &str, file: &'a [u8], entries: &HashMap<String, FileEntr
 }
 
 /// Read a depth and color image given by an association.
-fn read_image_pair(
+fn _read_image_pair(
     assoc: &tum_rgbd::Association,
     file: &[u8],
     entries: &HashMap<String, FileEntry>,
@@ -159,7 +163,7 @@ fn read_image_pair(
     // Read depth image.
     let depth_path_str = assoc.depth_file_path.to_str().expect("oaea").to_owned();
     let depth_buffer = get_buffer(&depth_path_str, file, entries);
-    let (w, h, depth_map_vec_u16) = read_png_16bits_buf(depth_buffer)?;
+    let (w, h, depth_map_vec_u16) = _read_png_16bits_buf(depth_buffer)?;
     let depth_map = DMatrix::from_row_slice(h, w, depth_map_vec_u16.as_slice());
 
     // Read color image.
@@ -171,7 +175,30 @@ fn read_image_pair(
     Ok((depth_map, img_mat))
 }
 
-fn read_png_16bits_buf<R: Read>(r: R) -> Result<(usize, usize, Vec<u16>), png::DecodingError> {
+fn _read_image_pair_bis(
+    assoc: &tum_rgbd::Association,
+    file: &[u8],
+    entries: &HashMap<String, FileEntry>,
+) -> Result<(DMatrix<u16>, DMatrix<u8>), Box<Error>> {
+    // Read depth image.
+    let depth_path_str = assoc.depth_file_path.to_str().expect("oaea").to_owned();
+    let depth_buffer = get_buffer(&depth_path_str, file, entries);
+    let (w, h, depth_map_vec_u16) = _png_decode_u16(depth_buffer)?;
+    let depth_map = DMatrix::from_row_slice(h, w, depth_map_vec_u16.as_slice());
+
+    // Read color image.
+    let img_path_str = assoc.color_file_path.to_str().expect("oaeaauuu").to_owned();
+    let img_buffer = get_buffer(&img_path_str, file, entries);
+    let png_img = png_me::decode_no_check(img_buffer)?;
+    let (width, height, data) = (png_img.width, png_img.height, png_img.data);
+    let img = image::RgbImage::from_raw(width as u32, height as u32, data).expect("toto");
+    let dyn_img = image::DynamicImage::ImageRgb8(img);
+    let img_mat = interop::matrix_from_image(dyn_img.to_luma());
+
+    Ok((depth_map, img_mat))
+}
+
+fn _read_png_16bits_buf<R: Read>(r: R) -> Result<(usize, usize, Vec<u16>), png::DecodingError> {
     let mut decoder = png::Decoder::new(r);
     // Use the IDENTITY transformation because by default
     // it will use STRIP_16 which only keep 8 bits.
@@ -190,4 +217,12 @@ fn read_png_16bits_buf<R: Read>(r: R) -> Result<(usize, usize, Vec<u16>), png::D
 
     // Return u16 buffer.
     Ok((info.width as usize, info.height as usize, buffer_u16))
+}
+
+fn _png_decode_u16(input: &[u8]) -> Result<(usize, usize, Vec<u16>), Box<Error>> {
+    let png_img = png_me::decode_no_check(input)?;
+    let mut buffer_u16 = vec![0; png_img.width * png_img.height];
+    let mut buffer_cursor = Cursor::new(&png_img.data);
+    buffer_cursor.read_u16_into::<BigEndian>(&mut buffer_u16)?;
+    Ok((png_img.width, png_img.height, buffer_u16))
 }
