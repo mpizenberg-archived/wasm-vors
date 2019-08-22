@@ -97,6 +97,7 @@ impl WasmTracker {
         let depth_time = self.associations[0].depth_timestamp;
         let img_time = self.associations[0].color_timestamp;
         self.tracker = Some(config.init(depth_time, &depth_map, img_time, img));
+        self.change_keyframe = true;
 
         // Return the number of frames contained in the archive.
         self.associations.len()
@@ -262,6 +263,7 @@ impl PointCloud {
 
     pub fn tick(&mut self, wasm_tracker: &WasmTracker) -> usize {
         if wasm_tracker.change_keyframe {
+            // unimplemented!();
             console_log!("new keyframe");
             let start = self.end;
             let points_3d = wasm_tracker
