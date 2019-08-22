@@ -7,6 +7,7 @@ let wasm;
 
 let camera;
 let scene;
+let controls;
 let point_cloud;
 let geometry;
 let renderer;
@@ -53,6 +54,8 @@ async function run() {
 	renderer = new THREE.WebGLRenderer();
 	renderer.setPixelRatio(window.devicePixelRatio);
 	renderer.setSize(window.innerWidth, window.innerHeight);
+	controls = new THREE.OrbitControls(camera, renderer.domElement);
+	controls.update();
 
 	// Set up file reader.
 	let file_reader = new FileReader();
@@ -109,12 +112,13 @@ function track(wasm_tracker, frame_id, nb_frames) {
 		let start_valid = end_valid;
 		end_valid = point_cloud.tick(wasm_tracker);
 		updateGeometry(start_valid, end_valid);
-		renderer.render(scene, camera);
-		stats.update();
-		window.requestAnimationFrame(() =>
-			track(wasm_tracker, frame_id + 1, nb_frames)
-		);
 	}
+	controls.update();
+	renderer.render(scene, camera);
+	stats.update();
+	window.requestAnimationFrame(() =>
+		track(wasm_tracker, frame_id + 1, nb_frames)
+	);
 }
 
 function updateGeometry(start_valid, end_valid) {
