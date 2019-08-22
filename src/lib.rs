@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 
 use image;
 use nalgebra::DMatrix;
-use std::{error::Error, io::Read, io::Seek, io::SeekFrom};
+use std::{error::Error, io::Read};
 
 use byteorder::{BigEndian, ReadBytesExt};
 use png::HasParameters;
@@ -64,8 +64,8 @@ impl WasmTracker {
             self.entries.insert(
                 file.path().unwrap().to_str().expect("52").to_owned(),
                 FileEntry {
-                    offset: file.raw_file_position(),
-                    length: file.header().size().expect("55"),
+                    offset: file.raw_file_position() as usize,
+                    length: file.header().entry_size().expect("55") as usize,
                 },
             );
         }
@@ -73,10 +73,8 @@ impl WasmTracker {
 
     pub fn init(&mut self, camera_id: &str) -> usize {
         let intrinsics = create_camera(camera_id).expect("62");
-        let mut buffer_cursor = Cursor::new(&self.tar_buffer);
-        let associations_buffer =
-            get_buffer("associations.txt", &mut buffer_cursor, &self.entries).expect("63");
-        self.associations = parse_associations_buf(associations_buffer.as_slice()).expect("64");
+        let associations_buffer = get_buffer("associations.txt", &self.tar_buffer, &self.entries);
+        self.associations = parse_associations_buf(associations_buffer).expect("64");
 
         // Setup tracking configuration.
         let config = track::Config {
@@ -89,7 +87,7 @@ impl WasmTracker {
 
         // Initialize tracker with first depth and color image.
         let (depth_map, img) =
-            read_images(&self.associations[0], &mut buffer_cursor, &self.entries).expect("81");
+            read_image_pair(&self.associations[0], &self.tar_buffer, &self.entries).expect("81");
         let depth_time = self.associations[0].depth_timestamp;
         let img_time = self.associations[0].color_timestamp;
         self.tracker = Some(config.init(depth_time, &depth_map, img_time, img));
@@ -99,9 +97,8 @@ impl WasmTracker {
     }
 
     pub fn track(&mut self, frame_id: usize) -> String {
-        let mut buffer_cursor = Cursor::new(&self.tar_buffer);
         let assoc = &self.associations[frame_id];
-        let (depth_map, img) = read_images(assoc, &mut buffer_cursor, &self.entries).expect("92");
+        let (depth_map, img) = read_image_pair(assoc, &self.tar_buffer, &self.entries).expect("92");
 
         // Track the rgb-d image.
         if let Some(ref mut t) = self.tracker {
@@ -143,44 +140,30 @@ fn parse_associations_buf(buffer: &[u8]) -> Result<Vec<tum_rgbd::Association>, B
 }
 
 struct FileEntry {
-    offset: u64,
-    length: u64,
+    offset: usize,
+    length: usize,
 }
 
-fn get_buffer<R: Read + Seek>(
-    name: &str,
-    file: &mut R,
-    entries: &HashMap<String, FileEntry>,
-) -> Result<Vec<u8>, std::io::Error> {
+fn get_buffer<'a>(name: &str, file: &'a [u8], entries: &HashMap<String, FileEntry>) -> &'a [u8] {
     let entry = entries.get(name).expect("Entry is not in archive");
-    read_file_entry(entry, file)
-}
-
-fn read_file_entry<R: Read + Seek>(
-    entry: &FileEntry,
-    file: &mut R,
-) -> Result<Vec<u8>, std::io::Error> {
-    let mut buffer = vec![0; entry.length as usize];
-    file.seek(SeekFrom::Start(entry.offset))?;
-    file.read_exact(&mut buffer)?;
-    Ok(buffer)
+    &file[entry.offset..entry.offset + entry.length]
 }
 
 /// Read a depth and color image given by an association.
-fn read_images<R: Read + Seek>(
+fn read_image_pair(
     assoc: &tum_rgbd::Association,
-    file: &mut R,
+    file: &[u8],
     entries: &HashMap<String, FileEntry>,
 ) -> Result<(DMatrix<u16>, DMatrix<u8>), image::ImageError> {
     // Read depth image.
     let depth_path_str = assoc.depth_file_path.to_str().expect("oaea").to_owned();
-    let depth_buffer = get_buffer(&depth_path_str, file, entries)?;
-    let (w, h, depth_map_vec_u16) = read_png_16bits_buf(depth_buffer.as_slice())?;
+    let depth_buffer = get_buffer(&depth_path_str, file, entries);
+    let (w, h, depth_map_vec_u16) = read_png_16bits_buf(depth_buffer)?;
     let depth_map = DMatrix::from_row_slice(h, w, depth_map_vec_u16.as_slice());
 
     // Read color image.
     let img_path_str = assoc.color_file_path.to_str().expect("oaeaauuu").to_owned();
-    let img_buffer = get_buffer(&img_path_str, file, entries)?;
+    let img_buffer = get_buffer(&img_path_str, file, entries);
     let img = image::load(Cursor::new(img_buffer), image::ImageFormat::PNG)?;
     let img_mat = interop::matrix_from_image(img.to_luma());
 
