@@ -34,6 +34,7 @@ pub struct WasmTracker {
     entries: HashMap<String, FileEntry>,
     associations: Vec<tum_rgbd::Association>,
     tracker: Option<track::Tracker>,
+    change_keyframe: bool,
 }
 
 /// Public methods, exported to JavaScript.
@@ -46,6 +47,7 @@ impl WasmTracker {
             entries: HashMap::new(),
             associations: Vec::new(),
             tracker: None,
+            change_keyframe: false,
         }
     }
 
@@ -107,7 +109,7 @@ impl WasmTracker {
 
         // Track the rgb-d image.
         if let Some(ref mut t) = self.tracker {
-            t.track(
+            self.change_keyframe = t.track(
                 assoc.depth_timestamp,
                 &depth_map,
                 assoc.color_timestamp,
@@ -225,4 +227,61 @@ fn _png_decode_u16(input: &[u8]) -> Result<(usize, usize, Vec<u16>), Box<Error>>
     let mut buffer_cursor = Cursor::new(&png_img.data);
     buffer_cursor.read_u16_into::<BigEndian>(&mut buffer_u16)?;
     Ok((png_img.width, png_img.height, buffer_u16))
+}
+
+// Point cloud stuff ###########################################################
+
+#[wasm_bindgen]
+pub struct PointCloud {
+    end: usize,
+    points: Vec<f32>,
+    colors: Vec<f32>,
+}
+
+/// Public methods, exported to JavaScript.
+#[wasm_bindgen]
+impl PointCloud {
+    pub fn new(nb_points: usize) -> PointCloud {
+        let points = vec![0.0; 3 * nb_points];
+        let colors = vec![0.0; 3 * nb_points];
+        console_log!("PointCloud initialized");
+        PointCloud {
+            end: 0,
+            points,
+            colors,
+        }
+    }
+
+    pub fn points(&self) -> *const f32 {
+        self.points.as_ptr()
+    }
+
+    pub fn colors(&self) -> *const f32 {
+        self.colors.as_ptr()
+    }
+
+    pub fn tick(&mut self, wasm_tracker: &WasmTracker) -> usize {
+        if wasm_tracker.change_keyframe {
+            console_log!("new keyframe");
+            let start = self.end;
+            let points_3d = wasm_tracker
+                .tracker
+                .as_ref()
+                .map(|t| t.points_3d())
+                .expect("tracker");
+            self.end = start + 3 * points_3d.len();
+            let points = &mut self.points[start..self.end];
+            let colors = &mut self.colors[start..self.end];
+            colors.iter_mut().for_each(|x| *x = 0.9);
+            points
+                .chunks_mut(3)
+                .zip(points_3d.iter())
+                .for_each(|(p, p3d)| {
+                    p[0] = p3d.x;
+                    p[1] = p3d.y;
+                    p[2] = p3d.z;
+                });
+        }
+        self.end
+    }
 }
