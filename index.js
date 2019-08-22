@@ -19,7 +19,7 @@ let nb_particles = 1000000;
 let end_valid = 0;
 
 // Prepare WebGL context with THREE.
-camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
 camera.position.z = 10;
 scene = new THREE.Scene();
 scene.background = new THREE.Color( 0x050505 );
@@ -48,6 +48,7 @@ async function run() {
 	geometry.addAttribute("color", col_buffer_attr);
 	let material = new THREE.PointsMaterial({size: 0.01, vertexColors: THREE.VertexColors});
 	let particles = new THREE.Points(geometry, material);
+	particles.frustumCulled = false;
 	scene.add(particles);
 
 	// Setup the renderer.
